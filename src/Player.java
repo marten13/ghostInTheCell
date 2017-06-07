@@ -8,6 +8,7 @@ class Player {
     public static ArrayList<Factory> factories;
     public static int factoryCount;
     public static Factory factory;
+    public static ArrayList<Troop> troops;
 
     public static void main(String args[]) {
         Scanner in = new Scanner(System.in);
@@ -25,45 +26,56 @@ class Player {
             int factory2 = in.nextInt();
             int distance = in.nextInt();
             addDistanceToFactory(factory1, factory2, distance);
+            addDistanceToFactory(factory2, factory1, distance);
+            System.err.println("distances " + factory1 + " " + factory2 + " " + distance);
         }
-
+       
 //        Hieronder wat spul uit de spel avond
         SortedSet<Integer> ourFacts = new TreeSet<>();
         Set<Integer> enemyFacts = new HashSet<>();
         Map<Integer, Integer> factTroop = new HashMap<>();
         Map<Integer, Integer> production = new HashMap<>();
         int loopCount = 0;
+//        Hierboven wat spul uit de spel avond
 
+        troops = new ArrayList<Troop>();
         // game loop
         while (true) {
             int entityCount = in.nextInt(); // the number of entities (e.g. factories and troops)
-            enemyFacts.clear();
-            ourFacts.clear();
+            int troopCount = entityCount - factoryCount;
+            System.err.println("troopcount " + troopCount);
             for (int i = 0; i < entityCount; i++) {
                 int entityId = in.nextInt();
                 String entityType = in.next();
-                System.err.println("entityId " + entityId + " entityType " + entityType);
-                int arg1 = in.nextInt();
-                int arg2 = in.nextInt();
-                int arg3 = in.nextInt();
-                int arg4 = in.nextInt();
-                int arg5 = in.nextInt();
+                // variables in args:       Factory     Troop
+                int arg1 = in.nextInt();//  owner       owner
+                int arg2 = in.nextInt();//  cyborgs     cyborgs
+                int arg3 = in.nextInt();//  production  homeFactory
+                int arg4 = in.nextInt();//              targetFactory
+                int arg5 = in.nextInt();//              turnsTillArrival
 
-                if ( entityType.equalsIgnoreCase("factory")){
-                    if ( arg1 == 1 ){
-                        // for ( int j = 0; j<factoryCount; j++){
-                        //     if (j != 1 && j != entityId){
-                        //          System.out.println("MOVE " + entityId + " "  +j + " 3");
-                        //     }
-                        ourFacts.add(entityId);
-                        factTroop.put(entityId, arg2);
-
-                    }else{
-                        enemyFacts.add(entityId);
-                        production.put(entityId, arg3);
-
+                if ( entityType.equalsIgnoreCase("FACTORY")){
+                    //Set the args to the right factory
+                    setArgsInFactory(entityId, arg1, arg2, arg3);
+                    switch (arg1) {
+                        case 1:
+                            ourFacts.add(entityId);
+                            factTroop.put(entityId, arg2);
+                            break;
+                        case 0:
+                            enemyFacts.add(entityId);
+                            production.put(entityId, arg3);
+                            break;
+                        case -1:
+                            enemyFacts.add(entityId);
+                            production.put(entityId, arg3);
+                            break;
                     }
-
+                }
+                else
+                {
+                    //the entity is a TROOP
+                     troops.add( new Troop(entityId, "TROOP", arg1, arg2, arg3, arg4, arg5));
                 }
             }
 
@@ -146,7 +158,9 @@ class Player {
 
             // }
 
-
+            enemyFacts.clear();
+            ourFacts.clear();
+            troops.clear();
 
         }
     }
@@ -154,37 +168,84 @@ class Player {
     {
         Iterator itFact = factories.iterator();
         while(itFact.hasNext()){
-            Factory factory = (Factory) itFact.next();
-            if (factory.getId() == factory1){
-                factory.factoriesDistances.put(factory2, distance);
+            Factory distFact = (Factory) itFact.next();
+            if (distFact.getEntityId() == factory1){
+                distFact.factoriesDistances.put(factory2, distance);
             }
         }
+    }
+    
+    private static void setArgsInFactory(int entityId, int arg1, int arg2, int arg3){
+        Iterator itFact = factories.iterator();
+        while (itFact.hasNext()) {
+            Factory f = (Factory) itFact.next();
+            if (f.getEntityId() == entityId){
+                f.setEntityType("FACTORY");
+                f.setOwner(arg1);
+                f.setCyborgs(arg2);
+                f.setProduction(arg3);
+            }
+        }
+    }
+
+}
+
+class Troop extends Entity{
+    private int homeFactory;
+    private int targetFactory;
+    private int turnsTillArrival;
+    
+    Troop(){}
+    Troop(int entityId, String entityType, int owner, int homeFactory, int targetFactory, int cyborgs, int turnsTillArrival){
+//        super(entityId);
+//        super(entityType);
+//        super(owner);
+//        super(cyborgs);
+        super();
+        this.homeFactory = homeFactory;
+        this.targetFactory = targetFactory;
+        this.turnsTillArrival = turnsTillArrival;
+    }
+
+    public int getHomeFactory() {
+        return homeFactory;
+    }
+
+    public void setHomeFactory(int homeFactory) {
+        this.homeFactory = homeFactory;
+    }
+
+    public int getTargetFactory() {
+        return targetFactory;
+    }
+
+    public void setTargetFactory(int targetFactory) {
+        this.targetFactory = targetFactory;
+    }
+
+    public int getTurnsTillArrival() {
+        return turnsTillArrival;
+    }
+
+    public void setTurnsTillArrival(int turnsTillArrival) {
+        this.turnsTillArrival = turnsTillArrival;
     }
 
 
 }
 
 class Factory extends Entity{
-    private int cyborgs;
     private int production;
-    //Distance from this factory to alle the others:
+    //Distance from this factory to all others:
     public Map<Integer, Integer> factoriesDistances = new HashMap<>();
 
     Factory(int entityId){
         super(entityId);
     }
 
-    public int getId() {
-        return getEntityId();
-    }
-
-    public int getCyborgs() {
-        return cyborgs;
-    }
-
-    public void setCyborgs(int cyborgs) {
-        this.cyborgs = cyborgs;
-    }
+    // public int getId() {
+    //     return getEntityId();
+    // }
 
     public int getProduction() {
         return production;
@@ -205,13 +266,17 @@ class Factory extends Entity{
 
 class Entity{
     public int entityId;
-    public enum EntityType
-    {
-        FACTORY, TROOP;
-    }
-    private int owner;
-
+    public String entityType;
+    public int owner;
+    public int cyborgs;
+    
     public Entity(){}
+    public Entity(int entityId, String entityType, int owner, int cyborgs){
+        this.entityId = entityId;
+        this.entityType = entityType;
+        this.owner = owner;
+        this.cyborgs = cyborgs;
+    }
     public Entity(int entityId){
         this.entityId = entityId;
     }
@@ -223,4 +288,23 @@ class Entity{
         return owner;
     }
 
+    public void setOwner(int owner) {
+        this.owner = owner;
+    }
+    
+    public int getCyborgs() {
+        return cyborgs;
+    }
+
+    public void setCyborgs(int cyborgs) {
+        this.cyborgs = cyborgs;
+    }
+
+    public void setEntityType(String entityType) {
+        this.entityType = entityType;
+    }
+    
+    public String getEntityType() {
+        return entityType;
+    }
 }

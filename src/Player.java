@@ -5,10 +5,9 @@ import java.util.*;
  * the standard input according to the problem statement.
  **/
 class Player {
-    public static ArrayList<Factory> factories;
+    public static List<Factory> factories = new ArrayList<>();
     public static int factoryCount;
-    public static Factory factory;
-    public static ArrayList<Troop> troops;
+    public static List<Troop> troops = new ArrayList<>();
 
     public static void main(String args[]) {
         Scanner in = new Scanner(System.in);
@@ -16,7 +15,6 @@ class Player {
         //Initialization of the factories.
         factoryCount = in.nextInt(); // the number of factories
         System.err.println("factorycount: " + factoryCount);
-        factories = new ArrayList<Factory>();
         for (int x = 0; x < factoryCount; x++){
             factories.add(x, new Factory(x));
         }
@@ -27,20 +25,18 @@ class Player {
             int distance = in.nextInt();
             addDistanceToFactory(factory1, factory2, distance);
             addDistanceToFactory(factory2, factory1, distance);
-            System.err.println("distances " + factory1 + " " + factory2 + " " + distance);
         }
        
-//        Hieronder wat spul uit de spel avond
-        SortedSet<Integer> ourFacts = new TreeSet<>();
-        Set<Integer> enemyFacts = new HashSet<>();
-        Map<Integer, Integer> factTroop = new HashMap<>();
-        Map<Integer, Integer> production = new HashMap<>();
-        int loopCount = 0;
-//        Hierboven wat spul uit de spel avond
-
-        troops = new ArrayList<Troop>();
         // game loop
         while (true) {
+//        Hieronder wat spul uit de spel avond
+            SortedSet<Integer> ourFacts = new TreeSet<>();
+            Set<Integer> enemyFacts = new HashSet<>();
+            Map<Integer, Integer> factTroop = new HashMap<>();
+            Map<Integer, Integer> production = new HashMap<>();
+            int loopCount = 0;
+//        Hierboven wat spul uit de spel avond
+
             int entityCount = in.nextInt(); // the number of entities (e.g. factories and troops)
             int troopCount = entityCount - factoryCount;
             System.err.println("troopcount " + troopCount);
@@ -100,17 +96,50 @@ class Player {
             System.err.println("Ours: " + ourList);
             System.err.println("Theirs: " + enemyList);
 
-            int lastToSend = -1;
-            int numToSend = 10;
+            int numToSend;
+
+//****** NEW Stuff
+
+            String move = "";
+
+            //Which factories are mine?
+            List<Factory> myFactories = listMyFact();
+            //Which factories are NOT mine?
+            List<Factory> notMyFactories = listEnemyFact();
+            for (Factory myFact: myFactories) {
+                int id;
+                for (Factory otherFact: notMyFactories) {
+                    id = otherFact.getEntityId();
+                    int dist = myFact.getDistanceToOtherFactory(id);
+                    int prod = otherFact.getProduction();
+                    int cyb  = otherFact.getCyborgs();
+                    for (Troop trp : troops){
+                        if (trp.getTurnsTillArrival()<= dist){
+                            if(trp.getTargetFactory() == id ){
+                                if (trp.getOwner() == otherFact.getOwner()){
+                                    cyb = cyb + trp.getCyborgs();
+                                }
+                                else{
+                                    cyb = cyb - trp.getCyborgs();
+                                }
+                            }
+                        }
+                    }
+                    int cybNeedForConquer = cyb + prod * otherFact.getOwner()* -1 * dist + 1;
+                    System.err.println(cybNeedForConquer + " cyborgs Needed For Conquering " + id + " from: " + myFact.getEntityId());
+                }
+                //hier een sorted map maken met otherfacts  en cybNeedFor Conquer
+
+                //collect wat op je af komt dus hoeveel cyb je moet houden. Of hoeveel hulp heb je nodig.
+                // De rest kan uitgezonden naar hulp vragers en ten tweede naar de makkelijkste otherfacts.
+            }
 
 
+
+            // oude code
             for ( int j = 0 ; j < ourList.size(); j++){
                 // System.err.println(factTroop.get(ourList.get(j))/enemyList.size());
                 numToSend = factTroop.get(ourList.get(j))/enemyList.size()+loopCount;
-                // System.err.println(numToSend);
-                // if ( j != lastToSend ){
-                // for ( int k = 0; k < enemyList.size(); k++){
-                // System.err.println(numToSend);
                 long i = 0;
                 for (Map.Entry<Integer, Integer> pair : production.entrySet()) {
                     if( pair.getValue()>0){
@@ -118,51 +147,41 @@ class Player {
                             System.out.println("MOVE " + ourList.get(j) + " " + pair.getKey() + " " + numToSend);
                         }
                     }
-
-                    // System.out.println("MOVE " + ourList.get(j) + " "
-                    // + enemyList.get(k) + " " + numToSend);
-                    // lastToSend = j;
-                    // System.err.println("Ours: " + ourFacts);
-                    // System.err.println("Theirs: " + enemyFacts);
-                    // System.err.println("Troops: " + factTroop);
                 }
             }
             // }
 
             loopCount++;
-            // Iterator ourIter = ourFacts.iterator();
-            // while (ourIter.hasNext()) {
-            //     Iterator enemyIter = enemyFacts.iterator();
-            //     while (enemyIter.hasNext()){
-            //         System.out.println("MOVE " + ourIter.next() + " " + enemyIter.next() + " 10");
-            //     }
-            // }
-
-
-
-            // Write an action using System.out.println()
-            // To debug: System.err.println("Debug messages...");
-            // for (int i = 0; i < entityCount; i++){
-            //     System.err.println(in.next());
-            // }
-
-            // Any valid action, such as "WAIT" or "MOVE source destination cyborgs"
-            // for ( int i = 0; i<factoryCount; i++){
-            //     if (i != 1){
-
-            //         System.out.println("MOVE 1 " +i + " 3");
-
-            //     }
-            // }
-            // for ( int i = 0; i < entityCount; i++ ){
-
-            // }
 
             enemyFacts.clear();
             ourFacts.clear();
             troops.clear();
 
         }
+    }
+    private static List listMyFact(){
+        //Which factories are mine?
+        List <Factory> myFact = new ArrayList<>();
+        Iterator it = factories.iterator();
+        while ( it.hasNext()) {
+            Factory tmpFact = (Factory) it.next();
+            if (tmpFact.getOwner() == 1) {
+                myFact.add(tmpFact);
+            }
+        }
+        return myFact;
+    }
+    private static List listEnemyFact(){
+        //Which factories are not mine?
+        List <Factory> notMyFact = new ArrayList<>();
+        Iterator it = factories.iterator();
+        while ( it.hasNext()) {
+            Factory tmpFact = (Factory) it.next();
+            if (tmpFact.getOwner() < 1) {
+                notMyFact.add(tmpFact);
+            }
+        }
+        return notMyFact;
     }
     private static void addDistanceToFactory(int factory1, int factory2, int distance)
     {
@@ -243,10 +262,6 @@ class Factory extends Entity{
         super(entityId);
     }
 
-    // public int getId() {
-    //     return getEntityId();
-    // }
-
     public int getProduction() {
         return production;
     }
@@ -255,7 +270,8 @@ class Factory extends Entity{
         this.production = production;
     }
 
-    public int getDistanceToFactory2(int factory2){
+    public int getDistanceToOtherFactory(int factory2){
+        System.err.println(" # other facts" + factoriesDistances.size());
         if (factoriesDistances.containsKey(factory2)){
             return factoriesDistances.getOrDefault(factory2, 0 );
         }
@@ -268,7 +284,7 @@ class Entity{
     public int entityId;
     public String entityType;
     public int owner;
-    public int cyborgs;
+    private  int cyborgs;
     
     public Entity(){}
     public Entity(int entityId, String entityType, int owner, int cyborgs){
@@ -306,5 +322,31 @@ class Entity{
     
     public String getEntityType() {
         return entityType;
+    }
+}
+
+class MapUtil
+{
+// Van https://stackoverflow.com/questions/109383/sort-a-mapkey-value-by-values-java
+//    Dus gewoon aanroepen met b.v. testMap = MapUtil.sortByValue( testMap );
+    public static <K, V extends Comparable<? super V>> Map<K, V>
+    sortByValue( Map<K, V> map )
+    {
+        List<Map.Entry<K, V>> list =
+                new LinkedList<Map.Entry<K, V>>( map.entrySet() );
+        Collections.sort( list, new Comparator<Map.Entry<K, V>>()
+        {
+            public int compare( Map.Entry<K, V> o1, Map.Entry<K, V> o2 )
+            {
+                return (o1.getValue()).compareTo( o2.getValue() );
+            }
+        } );
+
+        Map<K, V> result = new LinkedHashMap<K, V>();
+        for (Map.Entry<K, V> entry : list)
+        {
+            result.put( entry.getKey(), entry.getValue() );
+        }
+        return result;
     }
 }

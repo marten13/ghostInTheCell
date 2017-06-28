@@ -18,6 +18,11 @@ class Player {
 
     public static void main(String args[]) {
 //        MapUtilTest.testSortByValue();
+        Player player = new Player();
+        player.run();
+    }
+
+    private void run(){
         Scanner in = new Scanner(System.in);
 
         //Initialization of the factories.
@@ -85,7 +90,7 @@ class Player {
             //organise own defense
             for (Factory myFact: myFactories) {
                 if (loopCount < 3){
-                    myFact.setEnemyBombOnTheWay(true);
+                    myFact.setEnemyBombOnTheWay(true); //to prevend immediate upgrade
                 }else{
                     myFact.setEnemyBombOnTheWay(false);
                     myFact.setBombMightArrive(myFact.canBombArriveNow(bombs));
@@ -173,7 +178,7 @@ class Player {
     }
 
 
-    private static void sendMoves(List mvs){
+    private void sendMoves(List mvs){
         if (mvs.size()>0) {
             String outputMoves = mvs.toString();
             outputMoves = outputMoves.replace(",", ";");
@@ -185,7 +190,7 @@ class Player {
         }
     }
     
-    private static List listMyFact(){
+    private List listMyFact(){
         //Which factories are mine?
         List <Factory> myFact = new ArrayList<>();
         Iterator it = factories.iterator();
@@ -197,7 +202,7 @@ class Player {
         }
         return myFact;
     }
-    private static List listEnemyFact(){
+    private List listEnemyFact(){
         //Which factories are not mine? (incl neutral)
         List <Factory> notMyFact = new ArrayList<>();
         Iterator it = factories.iterator();
@@ -210,7 +215,7 @@ class Player {
         return notMyFact;
     }
 
-    private static void addBombOrFlightTime(int entityId, int owner, int homeFactory, int targetFactory, int turnsTillArrival){
+    private void addBombOrFlightTime(int entityId, int owner, int homeFactory, int targetFactory, int turnsTillArrival){
         boolean knownBomb = false;
         for (Bomb bomb: bombs){
             drukAf("Bombs id" + bomb.getEntityId() + " new id " + entityId);
@@ -230,7 +235,7 @@ class Player {
             }
         }
     }
-    private static void updateBomblist(List<Integer> currentBombs){
+    private  void updateBomblist(List<Integer> currentBombs){
         if (bombs.size() > 0) {
             Iterator <Bomb> b = bombs.iterator();
             while (b.hasNext()){
@@ -248,7 +253,7 @@ class Player {
         }
     }
 
-    public static void drukAf(String input){
+    public  void drukAf(String input){
         System.err.println(input);
     }
 }
@@ -428,17 +433,11 @@ class Factory extends Entity{
         int friendlyCyborgsInFactory = 0;
         if (this.getOwner() == 1){
             friendlyCyborgsInFactory = this.getCyborgs() ;
-        }else{
-            friendlyCyborgsInFactory = this.getCyborgs() * -1;
         }
         this.turnsToArriveAndFriendlyCyborgs = Sorter.sortByAscKey(this.turnsToArriveAndFriendlyCyborgs);
         for (int turn = 0; turn < this.maxDistance + 1; turn++) {
             friendlyCyborgsInFactory = friendlyCyborgsInFactory + this.getTurnsToArriveAndFriendlyCyborgs(turn);
             friendlyCyborgsInFactory = friendlyCyborgsInFactory + this.getProducedCyb(turn);
-//            if (this.getOwner()!= 0){
-//
-//                drukAf("fac na prod " + this.getEntityId() + " turn " + turn + " friendlyCyborgsInFactory " + friendlyCyborgsInFactory);
-//            }
             this.turnsAndSurplusCyb.add(turn, friendlyCyborgsInFactory);
         }
         this.currentSurplusCybAvailableForSending = this.turnsAndSurplusCyb.get(0) - this.turnsAndProducedCyb.get(0); //made after sending.

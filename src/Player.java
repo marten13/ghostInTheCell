@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 /**
@@ -8,13 +9,13 @@ import java.util.stream.Collectors;
 class Player {
     public static List<Factory> factories = new ArrayList<>();
     public static int factoryCount;
-    public static List<Troop> troops = new ArrayList<>();
+    public static Map<Integer, Troop> troops = new HashMap<>();
     public static List<Bomb> bombs = new ArrayList<>();
     public static int loopCount;
     public static int myBombCount = 2;
     public static int enemyBombCount = 2;
-    //Collect the MOVE's
-    public static List<String> moves = new ArrayList<>();
+    public static List<String> outputStrings = new ArrayList<>();
+    public static List<Integer> currentBombs = new ArrayList<>();
 
     public static void main(String args[]) {
 //        MapUtilTest.testSortByValue();
@@ -42,7 +43,6 @@ class Player {
         //Other initialisations.
         long maxTurnTime = 0;
         boolean firstTurn = true;
-        List<Integer> currentBombs = new ArrayList<>();
         for (Factory f: factories) {
             f.setMaxDistance();
         }
@@ -50,9 +50,17 @@ class Player {
         // game loop
         while (true) {
             long starttime = System.currentTimeMillis();
-            moves.clear();
+            outputStrings.clear();
             currentBombs.clear();
             loopCount++;
+            
+            troops.forEach((integer, troop) -> troop.setTurnsTillArrival(troop.getTurnsTillArrival()-1));
+            troops.entrySet().removeIf(entry->entry.getValue().getTurnsTillArrival()<0);
+
+//            for (Map.Entry<Integer, Troop> t: troops.entrySet()){
+//                drukAf("Na aanpassing troops " + t.getKey() + " id " + t.getValue().getEntityId() + " turns " + t.getValue().getTurnsTillArrival());
+//            }
+
 
             int entityCount = in.nextInt(); // the number of entities (e.g. factories and troops)
             for (int i = 0; i < entityCount; i++) {
@@ -70,9 +78,7 @@ class Player {
                         factories.get(entityId).setArgsInFactory(arg1, arg2, arg3, arg4);
                         break;
                     case "TROOP":
-                        Troop inputTroop = new Troop(entityId, "TROOP", arg1, arg2, arg3, arg4, arg5);
-                        troops.add(inputTroop);
-                        factories.get(inputTroop.getTargetFactory()).addTroopArrivalsToFactory(inputTroop);
+                        troops.put(entityId, new Troop(entityId, arg1, arg2, arg3, arg4, arg5));
                         break;
                     case "BOMB":
                         addBombOrFlightTime( entityId,  arg1,  arg2,  arg3,  arg4);
@@ -82,45 +88,53 @@ class Player {
 
             updateBomblist(currentBombs);
             //Which factories are mine?
-            List<Factory> myFactories = listMyFact();
-            //Which factories are NOT mine?
-            List<Factory> notMyFactories = listEnemyFact();
+            List<Factory> myFactories = new ArrayList<>();
+            List<Factory> notMyFactories = new ArrayList<>();
+            factories.forEach(factory -> {if(factory.getOwner()==1) myFactories.add(factory); else notMyFactories.add(factory);});
+            troops.forEach((integer, troop) -> factories.get(troop.getTargetFactory()).addTroopArrivalsToFactory(troop));
+
+            //ACTIONS ARE PLANNED FROM HERE ON
 
             // komt eerst de bom? Dan kan je production bepalen, dan defense, help en attack.
             //organise own defense
-            for (Factory myFact: myFactories) {
-                if (loopCount < 3){
-                    myFact.setEnemyBombOnTheWay(true); //to prevend immediate upgrade
-                }else{
-                    myFact.setEnemyBombOnTheWay(false);
-                    myFact.setBombMightArrive(myFact.canBombArriveNow(bombs));
-                }
-                myFact.setTurnsAndProducedCyb(bombs);
-                myFact.setTurnsAndSurplusCyb();
-                myFact.adjustTurnsAndSurplusCybForLaterEnemies();
+            if (loopCount < 3) {
+                myFactories.forEach(myFact -> myFact.setEnemyBombOnTheWay(true)); //to prevend immediate upgrade
+            } else {
+                myFactories.forEach(myFact -> myFact.canBombArriveNow(bombs));
+            }
+            myFactories.forEach(myFact -> myFact.setTurnsAndProducedCyb(bombs));
+            drukAf("f1 na turns and produced " + myFactories.get(0).getSurplusCyb(0));
+            myFactories.forEach(Factory::setTurnsAndSurplusCyb);
+            drukAf("f1 na surplus " + myFactories.get(0).getSurplusCyb(0));
+            myFactories.forEach(Factory::adjustTurnsAndSurplusCybForLaterEnemies);
+            drukAf("f1 na adjust for enemies " + myFactories.get(0).getSurplusCyb(0));
+            myFactories.forEach(myFact -> myFact.setBombSender(false));
+            myFactories.forEach(Factory::adjustTurnsAndSurplusCybForProdZero);
+            drukAf("f1 na adjust for prod 0 " + myFactories.get(0).getSurplusCyb(0));
+
+            //Send first bomb immediately
+            if (myBombCount == 2){
+                int target = notMyFactories.stream().filter(f -> f.getOwner() == -1).findFirst().get().getEntityId();
+                drukAf("my b " + myBombCount + " target id " + target);
+                myFactories.get(0).setBombSender(true);
+                outputStrings.add("BOMB " + myFactories.get(0).getEntityId() + " " + target);
             }
             //Help Friends
             for (Factory myFact: myFactories) {
-                myFact.adjustTurnsAndSurplusCybForProdZero();
                 int sendableCyb = myFact.getCurrentSurplusCybAvailableForSending();
+                //todo deze administratie klopt niet. Vooral goed te zien als je wint en niet aangevallen wordt. Misschien voor 1 fact hele turns and surplus afdrukken.
                 drukAf("Factory " + myFact.getEntityId() + " can help with " + sendableCyb);
                 if (sendableCyb > 0) {
                     //Help if I can send help in time
-                    if (myBombCount == 2){
-                        int target = myFact.chooseBombTarget(notMyFactories, bombs);
-                        if (target > -1){
-                            moves.add("BOMB " + myFact.getEntityId() + " " + target);
-                        }
-                    }
                     if (!myFact.isBombSender()){
-                        moves.addAll(myFact.getFactoriesICanHelp(myFactories));
+                        outputStrings.addAll(myFact.getFactoriesICanHelp(myFactories));
                     }
                 }else{
                     drukAf("my bombs " + myBombCount);
                     if (myBombCount > 0){
                         int target = myFact.chooseBombTarget(notMyFactories, bombs);
                         if (target > -1){
-                            moves.add("BOMB " + myFact.getEntityId() + " " + target);
+                            outputStrings.add("BOMB " + myFact.getEntityId() + " " + target);
                         }
                     }
                 }
@@ -134,24 +148,27 @@ class Player {
                     drukAf("Factory " + myFact.getEntityId() + " could use for upgrade " + sendableCyb);
                     if (sendableCyb > 0) {
                         if (myFact.willIncreaseProd()) {
-                            moves.add("INC " + myFact.getEntityId());
+                            outputStrings.add("INC " + myFact.getEntityId());
                         }
                     }
                 }
             }
+
             //Help friends to upgrade
             for (Factory myFact: myFactories) {
                 if (!myFact.isBombSender()) {
                     int sendableCyb = myFact.getCurrentSurplusCybAvailableForSending();
                     drukAf("Factory " + myFact.getEntityId() + " could use for upgrading friends " + sendableCyb);
                     if (sendableCyb > 0) {
-                        moves.addAll(myFact.getFactoriesICanHelpToUpgrade(myFactories));
+                        outputStrings.addAll(myFact.getFactoriesICanHelpToUpgrade(myFactories));
                     }
                 }
             }
+
+
             //Conquer
             for (Factory notMyFact: notMyFactories) {
-                notMyFact.setBombMightArrive(notMyFact.canBombArriveNow(bombs));
+                notMyFact.canBombArriveNow(bombs);
                 notMyFact.setTurnsAndProducedCyb(bombs);
                 notMyFact.setTurnsAndSurplusCyb();
             }
@@ -160,15 +177,14 @@ class Player {
                     int sendableCyb = myFact.getCurrentSurplusCybAvailableForSending();
                     drukAf("Factory " + myFact.getEntityId() + " could use for attacking " + sendableCyb + " max " + myFact.getMaxDistance());
                     if (sendableCyb > 0) {
-                        moves.addAll(myFact.getConqueringMoves(notMyFactories));
+                        outputStrings.addAll(myFact.getConqueringMoves(notMyFactories));
                     }
                 }
             }
 
-            sendMoves(moves);
-            
-            troops.clear();
-            
+
+            sendMoves(outputStrings);
+
             long duration = System.currentTimeMillis() - starttime;
             drukAf("time: " + duration);
             if (!firstTurn && duration > maxTurnTime) {maxTurnTime = duration;}
@@ -179,7 +195,7 @@ class Player {
 
 
     private void sendMoves(List mvs){
-        if (mvs.size()>0) {
+        if (!mvs.isEmpty()) {
             String outputMoves = mvs.toString();
             outputMoves = outputMoves.replace(",", ";");
             outputMoves = outputMoves.replace("]", "");
@@ -189,71 +205,53 @@ class Player {
             System.out.println("WAIT");
         }
     }
-    
-    private List listMyFact(){
-        //Which factories are mine?
-        List <Factory> myFact = new ArrayList<>();
-        Iterator it = factories.iterator();
-        while ( it.hasNext()) {
-            Factory tmpFact = (Factory) it.next();
-            if (tmpFact.getOwner() == 1) {
-                myFact.add(tmpFact);
-            }
+
+    private void setInventoryOfHelp(List<Factory> myFactories) {
+        Map<Integer, Integer> myFactAndHelpTurns = new HashMap<>();
+        Map<Integer, Integer> myFactAndHelpAmount = new HashMap<>();
+        Map<Integer, Integer> myFactAndSurplus = new HashMap<>();
+        Map<Integer, Integer> helpDemandersAndProdAtHelpturn = new HashMap<>();
+
+        for (Factory myFact: myFactories){
+            myFactAndHelpTurns.put(myFact.getEntityId(), myFact.getHelpTurns());
+            myFactAndHelpAmount.put(myFact.getEntityId(), myFact.getHelpAmount());
+            myFactAndSurplus.put(myFact.getEntityId(), myFact.getCurrentSurplusCybAvailableForSending());
         }
-        return myFact;
-    }
-    private List listEnemyFact(){
-        //Which factories are not mine? (incl neutral)
-        List <Factory> notMyFact = new ArrayList<>();
-        Iterator it = factories.iterator();
-        while ( it.hasNext()) {
-            Factory tmpFact = (Factory) it.next();
-            if (tmpFact.getOwner() < 1) {
-                notMyFact.add(tmpFact);
+        for (Factory myFact: myFactories){
+            //TODO structure help
+            //maak hashmap met hulpvragers en production op moment helpturns mits geen bombontheway, sortDesc
+            for (Factory f: myFactories){
+                if (myFactAndHelpTurns.getOrDefault(f.getEntityId(), 0) > 0 && !f.isEnemyBombOnTheWay()){
+                    helpDemandersAndProdAtHelpturn.put(f.getEntityId(),f.getProducedCyb(myFactAndHelpTurns.getOrDefault(f.getEntityId(),0)));
+                }
             }
+            helpDemandersAndProdAtHelpturn = Sorter.sortByDescValue(helpDemandersAndProdAtHelpturn);
+            //haal voor hulpvragers alle factoriesAndDistances in local hashmap, sortAscVal, remove Fact met dist>helpturns
+            //remove fact zonder surplus
+            //bijwerken myFactAndSurplus
+
         }
-        return notMyFact;
+
     }
 
-    private void addBombOrFlightTime(int entityId, int owner, int homeFactory, int targetFactory, int turnsTillArrival){
-        boolean knownBomb = false;
-        for (Bomb bomb: bombs){
-            drukAf("Bombs id" + bomb.getEntityId() + " new id " + entityId);
-            if(bomb.getEntityId() == entityId){
-                knownBomb = true;
-            }
-            bomb.upFlightTime();
-        }
-        if(!knownBomb){
-            drukAf("new bomb " + entityId);
-            bombs.add( new Bomb(entityId, "BOMB", owner, homeFactory, targetFactory, turnsTillArrival));
-            if (owner == 1) {
-                myBombCount = myBombCount - 1;
-            }else{
-                enemyBombCount = enemyBombCount - 1;
+    private void addBombOrFlightTime(int entityId, int owner, int homeFactory, int targetFactory, int turnsTillArrival) {
+        boolean knownBomb = bombs.stream()
+                .anyMatch((Bomb b) -> entityId == b.getEntityId());
+        if (!knownBomb) {
+            bombs.add( new Bomb(entityId, owner, homeFactory, targetFactory, turnsTillArrival));
+            if (owner == 1) myBombCount --;
+            else {enemyBombCount--;
                 drukAf("Bomb!" );
             }
         }
     }
-    private  void updateBomblist(List<Integer> currentBombs){
-        if (bombs.size() > 0) {
-            Iterator <Bomb> b = bombs.iterator();
-            while (b.hasNext()){
-                Bomb tmpbmb = b.next();
-                boolean found = false;
-                for (int bmb : currentBombs) {
-                    if (tmpbmb.getEntityId() == bmb) {
-                        found = true;
-                    }
-                }
-                if (!found) {
-                    b.remove();
-                }
-            }
-        }
+
+    private void updateBomblist(List<Integer> currentBombs){
+        bombs.forEach(Bomb::upFlightTime);
+        bombs.removeIf(bomb -> !currentBombs.contains(bomb.getEntityId()));
     }
 
-    public  void drukAf(String input){
+    private void drukAf(String input){
         System.err.println(input);
     }
 }
@@ -271,19 +269,18 @@ class Bomb extends Troop{
 // It is impossible to send a bomb and a troop at the same time from the same factory and to the same destination.
 // If you try to do so, only the bomb will be sent.
 
-//TODO:
 //    Idee: ontvlucht de bomb: Je kent de homefact. hou de vluchtduur bij. If vluchtduur = dist  Than stuur alles weg
-//          naar andere fact. Maar voor andereEigenFact geldt: dist tot bombHomefact <> vluchtduur+dist this.fact tot andereEigenFact.
+//          naar andere fact.
+// TODO Maar voor andereEigenFact geldt: dist tot bombHomefact <> vluchtduur+dist this.fact tot andereEigenFact.
 //          Anders kunnen ze tegelijk aankomen.
 
 //      Aanval: voorwaarden: enemyFact cyb > 30. Tijdje niets naartoe sturen.
 //              Zorg dat mijn troops 1 beurt later kunnen veroveren
     private int flightTime;
-    Bomb(){}
-    Bomb(int entityId, String entityType, int owner, int homeFactory, int targetFactory, int turnsTillArrival){
-        super(entityId, entityType, owner, homeFactory, targetFactory, turnsTillArrival);
-        flightTime++;
+    Bomb(int entityId, int owner, int homeFactory, int targetFactory, int turnsTillArrival){
+        super(entityId, "BOMB", owner, homeFactory, targetFactory, turnsTillArrival);
     }
+
     public void upFlightTime(){
         flightTime++;
         System.err.println("bomb nr " + getEntityId() + " flightTime: " + flightTime);
@@ -308,8 +305,8 @@ class Troop extends Entity{
         this.turnsTillArrival = turnsTillArrival;
     }
     // for Troop itself
-    Troop(int entityId, String entityType, int owner, int homeFactory, int targetFactory, int cyborgs, int turnsTillArrival){
-        super(entityId, entityType, owner, cyborgs);
+    Troop(int entityId, int owner, int homeFactory, int targetFactory, int cyborgs, int turnsTillArrival){
+        super(entityId, "TROOP", owner, cyborgs);
         this.homeFactory = homeFactory;
         this.targetFactory = targetFactory;
         this.turnsTillArrival = turnsTillArrival;
@@ -327,23 +324,24 @@ class Troop extends Entity{
         return turnsTillArrival;
     }
 
+    public void setTurnsTillArrival(int turnsTillArrival) {
+        this.turnsTillArrival = turnsTillArrival;
+    }
 }
 
 class Factory extends Entity{
     private int production;
     private int turnsTillResumeProd;
-    //Distance from this factory to all others:
     private Map<Integer, Integer> factoriesDistances = new HashMap<>();
     private int maxDistance;
 
     //misschien een inner class voor turns
     private Map<Integer, Integer> turnsToArriveAndFriendlyCyborgs = new LinkedHashMap<>();
-    private List<Integer> turnsAndProducedCyb = new ArrayList<>();
-    private List<Integer> turnsAndSurplusCyb = new ArrayList<>();
+    private Map<Integer, Integer> turnsAndProducedCyb = new LinkedHashMap<>();
+    private Map<Integer, Integer> turnsAndSurplusCyb = new LinkedHashMap<>();
     private int helpAmount;
     private int helpTurns;
     private boolean enemyBombOnTheWay;
-    private int cybNotForDefense;
     private int currentSurplusCybAvailableForSending;
     private boolean bombMightArrive;
     private boolean BombSender;
@@ -351,133 +349,101 @@ class Factory extends Entity{
 
     Factory(int entityId){
         super(entityId);
+        this.setEntityType("FACTORY");
     }
-    public boolean canBombArriveNow(List<Bomb> bombs) {
-        this.setBombMightArrive(false);
-        this.setEnemyBombOnTheWay(false);
+    public void canBombArriveNow(List<Bomb> bombs) {
+        setBombMightArrive(false);
+        setEnemyBombOnTheWay(false);
         for (Bomb bmb : bombs) {
             if (bmb.getOwner() == -1 && this.getOwner() == 1) {
-//                drukAf("this fact " + this.getEntityId() + " afstand tot bomb maker " + this.getDistanceToOtherFactory(bmb.getHomeFactory())
-//                        + " flightTime " + bmb.getFlightTime());
-                if (this.getDistanceToOtherFactory(bmb.getHomeFactory()) > bmb.getFlightTime()) {
-                    this.setEnemyBombOnTheWay(true);
-                    this.setBombMightArrive(false);
+                if (getDistanceToOtherFactory(bmb.getHomeFactory()) > bmb.getFlightTime()) {
+                    setEnemyBombOnTheWay(true);
                 }
-                if (this.getDistanceToOtherFactory(bmb.getHomeFactory()) == bmb.getFlightTime()) {
-                    this.setEnemyBombOnTheWay(true);
-                    this.setBombMightArrive(true);
+                if (getDistanceToOtherFactory(bmb.getHomeFactory()) == bmb.getFlightTime()) {
+                    setEnemyBombOnTheWay(true);
+                    setBombMightArrive(true);
                     drukAf("bomb CAN arrive at factory " + this.getEntityId());
-                    this.setHelpAmount(0);
-                    this.setCybNotForDefense(this.getCyborgs());
-                    this.setCurrentSurplusCybAvailableForSending(this.getCyborgs());
-                    return true;
+                    setHelpAmount(0);
+                    setCurrentSurplusCybAvailableForSending(getCyborgs());
                 }
-                if (this.getDistanceToOtherFactory(bmb.getHomeFactory()) < bmb.getFlightTime()){
-                    this.setBombMightArrive(false);
-                    this.setEnemyBombOnTheWay(false);
-                    return false;
-                }
-            }else {
-                if (bmb.getTurnsTillArrival() == 0 && this.getEntityId() == bmb.getTargetFactory()) {
-                    this.setBombMightArrive(true);
-                    this.setHelpAmount(0);
-                    return true;
-                }
+            }else if (bmb.getTurnsTillArrival() == 0 && this.getEntityId() == bmb.getTargetFactory()) {
+                setBombMightArrive(true);
+                setHelpAmount(0);
             }
         }
-        return false;
     }
 
     //included possible bomb effects. Enemy has negative production
     public void setTurnsAndProducedCyb(List<Bomb> bombs){
-        this.turnsAndProducedCyb.clear();
         //max turns to calculate is max Distance to other factories. Base = 0 = this turn
-        for (int turn = 0; turn < this.maxDistance + 1; turn++){
-            int p;
-            if (this.turnsTillResumeProd - turn <= 0){
-                p = this.getProduction() * this.getOwner();
-            } else {
-                p = 0;
+        for (int turn = 0; turn < maxDistance + 1; turn++){
+            int p = 0;
+            if (turnsTillResumeProd - turn <= 0){
+                //TODO account for future upgrades
+                p = getProduction() * getOwner();
             }
-            if (this.getOwner() == 1) {
-                if(this.isBombMightArrive() && turn > 0 && turn < 5){
-                    this.turnsAndProducedCyb.add(turn, 0);
-                }else{
-                    this.turnsAndProducedCyb.add(turn, p);
-                }
+            if (getOwner() == 1) {
+                if(this.isBombMightArrive() && turn > 0 && turn < 6) p=0;
             }else {
-                if (bombs.size() == 0) {
-                    this.turnsAndProducedCyb.add(turn, p);
-                }else {
-                    for (Bomb bmb : bombs) {
-                        if (bmb.getOwner() == 1 &&
-                                this.getEntityId() == bmb.getTargetFactory() &&
-                                turn >= bmb.getTurnsTillArrival() &&
-                                turn <= bmb.getTurnsTillArrival() + 5) {
-                            this.turnsAndProducedCyb.add(turn, 0);
-                        } else {
-                            this.turnsAndProducedCyb.add(turn, p);
-                        }
+                for (Bomb bmb : bombs) {
+                    if (this.getEntityId() == bmb.getTargetFactory() &&
+                            turn > bmb.getTurnsTillArrival() &&
+                            turn <= bmb.getTurnsTillArrival() + 6) {
+                        p = 0;
                     }
                 }
             }
+            this.turnsAndProducedCyb.put(turn, p);
         }
     }
 
-    public int getProducedCyb(int turn){
-        return turnsAndProducedCyb.get(turn);
-    }
+    public int getProducedCyb(int turn){return turnsAndProducedCyb.getOrDefault(turn, 0);}
     //amount of cyb after (troops arrive && production)
     public void setTurnsAndSurplusCyb() {
-        this.turnsAndSurplusCyb.clear();
-        int friendlyCyborgsInFactory = 0;
-        if (this.getOwner() == 1){
-            friendlyCyborgsInFactory = this.getCyborgs() ;
+        turnsAndSurplusCyb.clear();
+        int friendlyCyborgsInFactory;
+        if (getOwner() == 1){friendlyCyborgsInFactory = getCyborgs();} else {friendlyCyborgsInFactory = getCyborgs() * -1;}
+        this.turnsToArriveAndFriendlyCyborgs = Sorter.sortByAscKey(turnsToArriveAndFriendlyCyborgs);
+        for (int turn = 0; turn < maxDistance + 1; turn++) {
+            friendlyCyborgsInFactory += getTurnsToArriveAndFriendlyCyborgs(turn);
+            if (turn>0) friendlyCyborgsInFactory += getProducedCyb(turn);
+            turnsAndSurplusCyb.put(turn, friendlyCyborgsInFactory);
         }
-        this.turnsToArriveAndFriendlyCyborgs = Sorter.sortByAscKey(this.turnsToArriveAndFriendlyCyborgs);
-        for (int turn = 0; turn < this.maxDistance + 1; turn++) {
-            friendlyCyborgsInFactory = friendlyCyborgsInFactory + this.getTurnsToArriveAndFriendlyCyborgs(turn);
-            friendlyCyborgsInFactory = friendlyCyborgsInFactory + this.getProducedCyb(turn);
-            this.turnsAndSurplusCyb.add(turn, friendlyCyborgsInFactory);
-        }
-        this.currentSurplusCybAvailableForSending = this.turnsAndSurplusCyb.get(0) - this.turnsAndProducedCyb.get(0); //made after sending.
+        currentSurplusCybAvailableForSending = getSurplusCyb(0);
     }
 
-    public int getSurplusCyb(int turn) {
-        return this.turnsAndSurplusCyb.get(turn);
-    }
+    public int getSurplusCyb(int turn) {return turnsAndSurplusCyb.getOrDefault(turn, 0);}
 
     //save cyb for attacks in transit.
     // Set Help amount and turns.
     // Set initial currentSurplusCybAvailableForSending
     public void adjustTurnsAndSurplusCybForLaterEnemies() {
-        //Walk backwards through set to account for attacks
-        //      to determine how much I should save this turn.
+        //Walk backwards through set to account for attacks to determine how much I should save this turn.
         int surplus = 0;
-        this.setHelpAmount(0);
-        this.setHelpTurns(0);
-        for (int turn = this.maxDistance; turn > -1 ; turn--) {
-            surplus = surplus + this.turnsAndSurplusCyb.get(turn);
-            if (surplus >= 0) {
-                this.setHelpTurns(0);
-                surplus = 0; //een positief surplus is zinloos NA een aanval.
-            } else {
-                if (this.getHelpTurns() == 0){
-                    this.setHelpTurns(turn); //first attack where assistance is needed
-                }
-                this.turnsAndSurplusCyb.set(turn, 0); //zodat je ze bewaart
+        setHelpAmount(0);
+        setHelpTurns(0);
+        for (int turn = maxDistance; turn > -1 ; turn--) {
+            surplus = turnsAndSurplusCyb.getOrDefault(turn, 0);
+            if (surplus < 0) {
+                helpAmount = (surplus * -1);
+                helpTurns = (turn);
+            }
+            if (helpAmount > 0) {
+                turnsAndSurplusCyb.put(turn, 0); // make sure I don't send anything
             }
         }
-        this.setHelpAmount(surplus * -1);
-        this.currentSurplusCybAvailableForSending = this.turnsAndSurplusCyb.get(0) - this.turnsAndProducedCyb.get(0); //made after sending.
+        currentSurplusCybAvailableForSending = getSurplusCyb(0);
     }
+
     public void adjustTurnsAndSurplusCybForProdZero(){
-        if (this.getProduction() == 0) {
-            int need = 10 - this.getCyborgs();
-            this.setHelpTurns(1);
-            this.setHelpAmount(need);
-            for (int turn = 0; turn < this.maxDistance + 1; turn++) {
-                    this.turnsAndSurplusCyb.set(turn, need * -1); //enough to upgrade
+        if (getProduction() == 0){
+            //find first turn with max available cyb.
+            int turnWithMax = Collections.max(turnsAndSurplusCyb.entrySet(), Map.Entry.comparingByValue()).getKey();
+            int max = turnsAndSurplusCyb.getOrDefault(turnWithMax,0);
+            //will my factory be conquered and is help necessary?
+            if (max < 10 && helpAmount == 0){
+                    setHelpTurns(turnWithMax);
+                    setHelpAmount(10 - max);
             }
         }
     }
@@ -503,19 +469,19 @@ class Factory extends Entity{
 
     //decide about increase of production
     public boolean willIncreaseProd(){
-        if (this.canIncreaseProd() && this.getCurrentSurplusCybAvailableForSending() > 9 ){
-            this.setCurrentSurplusCybAvailableForSending(this.getCurrentSurplusCybAvailableForSending() - 10);
+        if (canIncreaseProd() && getCurrentSurplusCybAvailableForSending() > 9 ){
+            setCurrentSurplusCybAvailableForSending(getCurrentSurplusCybAvailableForSending() - 10);
             return true;
         }
         return false;
     }
 
     public boolean canIncreaseProd(){
-        if (this.getProduction() < 3 && this.getHelpAmount() == 0 && this.getHelpTurns() == 0 && !this.isEnemyBombOnTheWay()){
-            return true;
-        }
-        return false;
+        return this.getProduction() < 3
+                && !isEnemyBombOnTheWay()
+                && helpAmount == 0;
     }
+
     public List<String> getFactoriesICanHelpToUpgrade(List<Factory> myfactories){
         List<String> moves = new ArrayList<>();
         for (Factory f: myfactories){
@@ -584,7 +550,7 @@ class Factory extends Entity{
 //        System.err.println(this.getEntityId() + " troop " + troop.getOwner() + " " + troop.getCyborgs() + " " + troop.getTargetFactory()+ " " + troop.getTurnsTillArrival() );
         int updateWaarde = troop.getOwner() * troop.getCyborgs();
         int oudeWaarde = turnsToArriveAndFriendlyCyborgs.getOrDefault(troop.getTurnsTillArrival(), 0);
-        this.turnsToArriveAndFriendlyCyborgs.put(troop.getTurnsTillArrival(), oudeWaarde + updateWaarde);
+        turnsToArriveAndFriendlyCyborgs.put(troop.getTurnsTillArrival(), oudeWaarde + updateWaarde);
     }
     public int getHelpAmount() {
         return helpAmount;
@@ -599,13 +565,7 @@ class Factory extends Entity{
         this.helpTurns = helpTurns;
     }
     public void setSurplusCyb(int turn, int surplus){
-        this.turnsAndSurplusCyb.set(turn, surplus);
-    }
-    public int getCybNotForDefense() {
-        return cybNotForDefense;
-    }
-    public void setCybNotForDefense(int cybNotForDefense) {
-        this.cybNotForDefense = cybNotForDefense;
+        this.turnsAndSurplusCyb.put(turn, surplus);
     }
     public boolean isBombMightArrive() {
         return bombMightArrive;
@@ -625,28 +585,16 @@ class Factory extends Entity{
         turnsToArriveAndFriendlyCyborgs.clear();
     }
     public void setArgsInFactory(int arg1, int arg2, int arg3, int arg4){
-        this.setEntityType("FACTORY");
         this.setOwner(arg1);
         this.setCyborgs(arg2);
-        this.production = (arg3);
-        this.turnsTillResumeProd =(arg4);
-        //and clear turnsToArriveAndFriendlyCyborgs
-        this.clearTurnsToArriveAndFriendlyCyborgs();
+        production = (arg3);
+        turnsTillResumeProd =(arg4);
+        clearTurnsToArriveAndFriendlyCyborgs();
     }
 
     private void drukAf(String input){System.err.println(input);}
-    public void setMaxDistance(){
-        maxDistance = Sorter.sortByDescValue(factoriesDistances).entrySet().iterator().next().getValue();
-//        if (this.getEntityId() == 1) {
-//            drukAf("" + this.getMaxDistance());
-//            this.factoriesDistances = Sorter.sortByDescValue(this.factoriesDistances);
-//            Iterator it = factoriesDistances.entrySet().iterator();
-//            while (it.hasNext()) {
-//                Map.Entry pair = (Map.Entry) it.next();
-//                drukAf("" + pair.getKey() + " = " + pair.getValue());
-//            }
-//        }
-    }
+
+    public void setMaxDistance(){maxDistance = Sorter.sortByDescValue(factoriesDistances).entrySet().iterator().next().getValue();}
 
     public int getMaxDistance() {
         return maxDistance;
@@ -655,8 +603,8 @@ class Factory extends Entity{
     public int chooseBombTarget(List<Factory> enemyFactories, List<Bomb> bombs) {
         //TODO sort on prod.
         for(Factory ef: enemyFactories){
-            drukAf("prod " + ef.getProduction() + " cyb avail " + ef.getCurrentSurplusCybAvailableForSending() + " own " + ef.getOwner());
             if (ef.getProduction() > 1 && ef.getCurrentSurplusCybAvailableForSending() < -1 && ef.getOwner() == -1){
+                drukAf(ef.getEntityId() + " prod " + ef.getProduction() + " cyb avail " + ef.getCurrentSurplusCybAvailableForSending() + " own " + ef.getOwner());
                 boolean bombedAllready = false;
                 for (Bomb b: bombs){
                     if (ef.getEntityId() == b.getTargetFactory() || ef.getTurnsTillResumeProd() > 0){
@@ -681,6 +629,7 @@ class Factory extends Entity{
     }
 }
 
+@SuppressWarnings("WeakerAccess")
 class Entity{
     private int entityId;
     private String entityType;
@@ -728,10 +677,6 @@ class Entity{
     public void setEntityType(String entityType) {
         this.entityType = entityType;
     }
-    
-    public String getEntityType() {
-        return entityType;
-    }
 }
 
 class MapUtilTest
@@ -740,7 +685,7 @@ class MapUtilTest
     {
         Random random = new Random(System.currentTimeMillis());
         int size = 10;
-        Map<Integer, Integer> testMap = new HashMap<Integer, Integer>(size);
+        Map<Integer, Integer> testMap = new HashMap<>(size);
         for(int i = 0 ; i < size ; ++i) {
             testMap.put( random.nextInt()/10000, random.nextInt()/10000);
         }
